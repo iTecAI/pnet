@@ -338,7 +338,7 @@ class NodeHandler(socketserver.StreamRequestHandler):
                 return
             
             result = self.node.callback(content)
-            enc_result: bytes = self.node.crypt.encrypt((result if type(result) == bytes else str(result).encode("utf-8")), rsa.PublicKey.load_pkcs1(base64.urlsafe_b64decode(pk.encode("utf-8"))))
+            enc_result: bytes = self.node.crypt.encrypt(result, rsa.PublicKey.load_pkcs1(base64.urlsafe_b64decode(pk.encode("utf-8"))))
             if self.node.net_encrypted:
                 enc_result = base64.urlsafe_b64encode(self.node.fernet.encrypt(enc_result)).decode("utf-8")
             self.wfile.write(f"{self.node.network_id}|rsp|{enc_result}|{self.node.pk}|END\n".encode("utf-8"))

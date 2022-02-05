@@ -61,7 +61,7 @@ def test_nodes(rounds = 128):
     nkey = Fernet.generate_key()
     alice = Node("alice", "ab", onmessage=lambda v: f"Pong - {v.decode('utf-8')}".encode("utf-8"), network_key=nkey)
     alice.serve()
-    bob = Node("bob", "ab", onmessage=lambda v: f"Pong - {v.decode('utf-8')}".encode("utf-8"), network_key=nkey, server_port=3336)
+    bob = Node("bob", "ab", onmessage=lambda v: f"Pong - {v.decode('utf-8')}".encode("utf-8"), network_key=nkey, server_port=random.randint(3340, 3399))
     bob.serve()
 
     print("Waiting for node detection")
@@ -83,8 +83,37 @@ def test_nodes(rounds = 128):
     alice.shutdown()
     bob.shutdown()
 
+def test_big_nodes(rounds = 128, n = 48):
+    print("Testing nodes")
+    timer = Timer()
+    nkey = Fernet.generate_key()
+
+    nodes = []
+    for i in range(n):
+        n = Node(f"Node-{i}", "nodes", onmessage=lambda v: f"Pong - {v}", network_key=nkey, server_port=i+3400)
+        n.serve()
+        nodes.append(n)
+    
+    print("Waiting for node detection")
+    time.sleep(4)
+
+    passed = []
+    for r in range(rounds):
+        data = f"Ping - {random.random()}"
+        random.shuffle(nodes)
+        timer.reset()
+        result = nodes[0].send(nodes[1].name, data)
+        t = timer.save()
+        print(f"\tNodes: {nodes[0].name} -> {nodes[1].name} | Input: {data} | Output: {result} | Pass: {'Pong - ' + data == result} | Elapsed: {t}s")
+        passed.append('Pong - ' + data == result)
+    
+    results, avg = timer.resolve()
+    print(f"Results:\n\tAverage time: {avg}s\n\tAll passed: {all(passed)}\n\tLow/High: {min(results)}s / {max(results)}s")
+    [i.shutdown() for i in nodes]
+
 
 if __name__ == "__main__":
     #test_crypt_parity(rounds=1024)
     #test_crypt_objects(rounds=1024)
     test_nodes(rounds=1024)
+    test_big_nodes()
