@@ -111,9 +111,38 @@ def test_big_nodes(rounds = 128, n = 48):
     print(f"Results:\n\tAverage time: {avg}s\n\tAll passed: {all(passed)}\n\tLow/High: {min(results)}s / {max(results)}s")
     [i.shutdown() for i in nodes]
 
+def test_objects(rounds = 128, n = 20):
+    print("Testing nodes")
+    timer = Timer()
+    nkey = Fernet.generate_key()
+
+    nodes = []
+    for i in range(n):
+        n = Node(f"Node-{i}", "nodes", onmessage=lambda v: v.value, network_key=nkey, server_port=i+3400)
+        n.serve()
+        nodes.append(n)
+    
+    print("Waiting for node detection")
+    time.sleep(4)
+
+    passed = []
+    for r in range(rounds):
+        data = Dummy()
+        random.shuffle(nodes)
+        timer.reset()
+        result = nodes[0].send(nodes[1].name, data)
+        t = timer.save()
+        print(f"\tNodes: {nodes[0].name} -> {nodes[1].name} | Input: {data} | Output: {result} | Pass: {result == data.value} | Elapsed: {t}s")
+        passed.append(result == data.value)
+    
+    results, avg = timer.resolve()
+    print(f"Results:\n\tAverage time: {avg}s\n\tAll passed: {all(passed)}\n\tLow/High: {min(results)}s / {max(results)}s")
+    [i.shutdown() for i in nodes]
+
 
 if __name__ == "__main__":
     #test_crypt_parity(rounds=1024)
     #test_crypt_objects(rounds=1024)
-    test_nodes(rounds=1024)
-    test_big_nodes()
+    #test_nodes(rounds=1024)
+    #test_big_nodes()
+    test_objects()
