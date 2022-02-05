@@ -1,5 +1,7 @@
-from pnet import Crypt
+from pnet import Crypt, Node
+from cryptography.fernet import Fernet
 import time
+import random
 import os
 
 class Timer:
@@ -53,8 +55,36 @@ def test_crypt_objects(rounds = 128):
     results, avg = timer.resolve()
     print(f"Results:\n\tAverage time: {avg}s\n\tAll passed: {all(passed)}\n\tLow/High: {min(results)}s / {max(results)}s")
 
+def test_nodes(rounds = 128):
+    print("Testing nodes")
+    timer = Timer()
+    nkey = Fernet.generate_key()
+    alice = Node("alice", "ab", onmessage=lambda v: f"Pong - {v.decode('utf-8')}".encode("utf-8"), network_key=nkey)
+    alice.serve()
+    bob = Node("bob", "ab", onmessage=lambda v: f"Pong - {v.decode('utf-8')}".encode("utf-8"), network_key=nkey, server_port=3336)
+    bob.serve()
+
+    print("Waiting for node detection")
+    for i in range(10):
+        #print(alice.peers, bob.peers)
+        time.sleep(1)   
+
+    passed = []
+    for r in range(rounds):
+        data = f"Ping - {random.random()}".encode("utf-8")
+        timer.reset()
+        result = alice.send("bob", data)
+        t = timer.save()
+        print(f"\tInput: {data} | Output: {result} | Pass: {'Pong - '.encode('utf-8') + data == result} | Elapsed: {t}s")
+        passed.append('Pong - '.encode('utf-8') + data == result)
+    
+    results, avg = timer.resolve()
+    print(f"Results:\n\tAverage time: {avg}s\n\tAll passed: {all(passed)}\n\tLow/High: {min(results)}s / {max(results)}s")
+    alice.shutdown()
+    bob.shutdown()
 
 
 if __name__ == "__main__":
-    test_crypt_parity(rounds=1024)
-    test_crypt_objects(rounds=1024)
+    #test_crypt_parity(rounds=1024)
+    #test_crypt_objects(rounds=1024)
+    test_nodes(rounds=1024)
