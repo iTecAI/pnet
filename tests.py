@@ -1,3 +1,4 @@
+import base64
 from pnet import Crypt, Node
 from cryptography.fernet import Fernet
 import time
@@ -51,7 +52,7 @@ def test_crypt_objects(rounds = 128):
         result = bob.decrypt(enc_data)
         timer.save()
         #print(f"\tRound {r+1}: {'PASS' if result.value == input_data.value else 'FAIL'} - {timer.save()}s")
-        passed.append(result == input_data)
+        passed.append(result.value == input_data.value)
     results, avg = timer.resolve()
     print(f"Results:\n\tAverage time: {avg}s\n\tAll passed: {all(passed)}\n\tLow/High: {min(results)}s / {max(results)}s")
 
@@ -65,7 +66,7 @@ def test_nodes(rounds = 128):
     bob.serve()
 
     print("Waiting for node detection")
-    for i in range(10):
+    for i in range(2):
         #print(alice.peers, bob.peers)
         time.sleep(1)   
 
@@ -95,7 +96,7 @@ def test_big_nodes(rounds = 128, n = 48):
         nodes.append(n)
     
     print("Waiting for node detection")
-    time.sleep(4)
+    time.sleep(2)
 
     passed = []
     for r in range(rounds):
@@ -123,7 +124,7 @@ def test_objects(rounds = 128, n = 20):
         nodes.append(n)
     
     print("Waiting for node detection")
-    time.sleep(4)
+    time.sleep(2)
 
     passed = []
     for r in range(rounds):
@@ -141,8 +142,8 @@ def test_objects(rounds = 128, n = 20):
 
 
 if __name__ == "__main__":
-    #test_crypt_parity(rounds=1024)
-    #test_crypt_objects(rounds=1024)
-    #test_nodes(rounds=1024)
+    test_crypt_parity(rounds=1024)
+    test_crypt_objects(rounds=1024)
+    test_nodes(rounds=1024)
     #test_big_nodes()
     test_objects()

@@ -19,7 +19,37 @@ from threading import Thread
 from logging import debug, info, warning, error, critical
 import re
 
-from sqlalchemy import func
+def universal_encode(data: typing.Any) -> bytes:
+    """
+    Encodes any data into base64
+    Yes, any data
+    All the data
+    :data The data
+    -> The encoded data
+    """
+    if type(data) == str:
+        _data: bytes = data.encode("utf-8")
+        _fmt = b"str"
+    elif type(data) == bytes:
+        _data: bytes = data
+        _fmt = b"raw"
+    else:
+        _data: bytes = pickle.dumps(data)
+        _fmt = b"pkl"
+    return base64.urlsafe_b64encode(_fmt+b"|"+_data)
+
+def universal_decode(data: bytes | str) -> typing.Any:
+    if type(data) == str:
+        data = data.encode("utf-8")
+    data = base64.urlsafe_b64decode(data)
+    fmt, data = data.split(b"|", maxsplit=1)
+    if fmt == b"raw":
+        return data
+    elif fmt == b"str":
+        return data.decode("utf-8")
+    else:
+        return pickle.loads(data)
+    
 
 class Crypt:
     def __init__(self, keys: list[rsa.PublicKey | rsa.PrivateKey] | None | int = None, keygen_chance: float = 0.05):
@@ -42,29 +72,20 @@ class Crypt:
         self.key = Fernet.generate_key()
         self.fernet = Fernet(self.key)
 
-    def encrypt(self, data: str | bytes, pk: rsa.PublicKey) -> bytes:
+    def encrypt(self, data: typing.Any, pk: rsa.PublicKey) -> bytes:
         """
         Encrypts data
         :data Any object. Str will be encoded, bytes will be used as-is, and anything else will be pickled.
         :pk Recipient public key
         -> base64 data
         """
-        if type(data) == str:
-            _data: bytes = data.encode("utf-8")
-            _fmt = b"str"
-        elif type(data) == bytes:
-            _data: bytes = data
-            _fmt = b"raw"
-        else:
-            _data: bytes = pickle.dumps(data)
-            _fmt = b"pkl"
+        all_data = universal_encode(data)
         
         # Regenerates key randomly
         if random.random() < self.kchance:
             self.key = Fernet.generate_key()
             self.fernet = Fernet(self.key)
         
-        all_data = _fmt + b"|" + _data
         data_encrypted = base64.urlsafe_b64encode(self.fernet.encrypt(all_data))
         enc_key = base64.urlsafe_b64encode(rsa.encrypt(self.key, pk))
         data_encoded = base64.urlsafe_b64encode(enc_key + b"|" + data_encrypted)
@@ -83,14 +104,8 @@ class Crypt:
         ekey, edata = decdata.split(b"|", maxsplit=1)
         key = rsa.decrypt(base64.urlsafe_b64decode(ekey), self.private)
         decryptor = Fernet(key)
-        ddata = decryptor.decrypt(base64.urlsafe_b64decode(edata))
-        fmt, data = ddata.split(b"|", maxsplit=1)
-        if fmt == b"raw":
-            return data
-        elif fmt == b"str":
-            return data.decode("utf-8")
-        else:
-            return pickle.loads(data)
+        return universal_decode(decryptor.decrypt(base64.urlsafe_b64decode(edata)))
+        
 
 class Node:
     def __init__(
@@ -113,8 +128,6 @@ class Node:
         :onmessage Callback to run when a message is recieved. Takes one argument
         :crypt Crypt object or None. If None, auto-generates object.
         :network_key Fernet encryption key of network. Leaving as None will disable network-level encryption
-        :enable_broadcast_on_unencrypted_networks Whether to allow network-wide broadcasts on non-encrypted networks.
-                Turning this on is a BAD IDEA.
         :server_port Port to listen on
         :advertise_port Port to advertise on. Should be shared across a network
         :broadcast_interval Time between UDP advertisements
@@ -124,11 +137,9 @@ class Node:
         self.name = name
         self.network_id = network_id
         if network_key:
-            self.broadcasts_allowed = True
             self.fernet = Fernet(network_key)
             self.net_encrypted = True
         else:
-            self.broadcasts_allowed = enable_broadcast_on_unencrypted_networks
             self.net_encrypted = False
             self.fernet = None
         
@@ -159,55 +170,64 @@ class Node:
         while self.running:
             advertiser.sendto(broadcast_message, ("<broadcast>", self.advertise_port))
             time.sleep(self.ad_interval)
+        advertiser.close()
     
+    def _proc_udp(self, data):
+        data = data.strip()
+        parts = data.decode("utf-8").split("|")
+        if "brd" in parts:
+            print(len(parts))
+        if len(parts) != 5:
+            return
+        if parts[4] != "END":
+            return
+        if parts[0] != self.network_id:
+            return
+
+        _, ptype, content, pk, _ = parts
+
+        # Check packet type
+        if not ptype == "adv":
+            return
+        
+        # Attempt to decrypt packet on network level
+        if self.net_encrypted:
+            try:
+                content: bytes = self.fernet.decrypt(base64.urlsafe_b64decode(content.encode("utf-8")))
+            except InvalidToken:
+                return
+        else:
+            content: bytes = content.encode("utf-8")
+        
+        content = content.decode("utf-8")
+        if "@" in content and ":" in content:
+            name, addr = content.split("@")
+            if name == self.name:
+                return
+            if not re.search("^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9]):[0-9]{1,5}$", addr) and not addr.startswith("localhost:"):
+                return
+            
+            self.peers[name] = {
+                "name": name,
+                "addr": addr,
+                "public_key": rsa.PublicKey.load_pkcs1(base64.urlsafe_b64decode(pk.encode("utf-8")))
+            }
+
     def discover(self):
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) #create UDP socket
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind(('', self.advertise_port))
         while self.running:
-            data, addr = s.recvfrom(1024) #wait for a packet
-            data = data.strip()
-            parts = data.decode("utf-8").split("|")
-            #print(parts)
-            if len(parts) != 5:
-                continue
-            if parts[4] != "END":
-                continue
-            if parts[0] != self.network_id:
-                continue
-
-            _, ptype, content, pk, _ = parts
-
-            # Check packet type
-            if not ptype in ["adv", "brd"]:
-                continue
-            
-            # Attempt to decrypt packet on network level
-            if self.net_encrypted:
-                try:
-                    content: bytes = self.fernet.decrypt(base64.urlsafe_b64decode(content.encode("utf-8")))
-                except InvalidToken:
-                    continue
-            else:
-                content: bytes = content.encode("utf-8")
-            
-            if ptype == "brd":
-                self.callback(content)
-            
-            elif ptype == "adv":
-                content = content.decode("utf-8")
-                if "@" in content and ":" in content:
-                    name, addr = content.split("@")
-                    if name == self.name:
-                        continue
-                    if not re.search("^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9]):[0-9]{1,5}$", addr) and not addr.startswith("localhost:"):
-                        continue
-                    
-                    self.peers[name] = {
-                        "name": name,
-                        "addr": addr,
-                        "public_key": rsa.PublicKey.load_pkcs1(base64.urlsafe_b64decode(pk.encode("utf-8")))
-                    }
+            datas = b""
+            while True:
+                _data, _ = s.recvfrom(1024)
+                if not _data: break
+                datas += _data
+                if b"END\n" in datas:
+                    packs = datas.split(b"\n")
+                    datas = packs.pop()
+                    [Thread(target=self._proc_udp, daemon=True, args=[i,]).start() for i in packs]
+        s.close()
             
     
     def create_handler(self, *args):
@@ -236,7 +256,7 @@ class Node:
             self.running = False
             self.sserver.shutdown()
     
-    def send(self, target: str, message: bytes):
+    def send(self, target: str, message: typing.Any):
         if not target in self.peers.keys():
             raise KeyError(f"Peer {target} not found")
         
