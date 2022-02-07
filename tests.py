@@ -171,6 +171,34 @@ def test_adv_node_1():
         dat.close()
     timer.save()
     print(timer.resolve())
+
+def _testdata(node, originator, data):
+    data = data.read()
+    print(f"\tGot {len(data)} bytes from {originator} on node {node.name}")
+    return len(data)
+
+def advanced_node_stress_test(rounds = 32, minsize = 128, maxsize = 1048576, nodes = 20):
+    key = Fernet.generate_key()
+    sp = random.randint(4000, 4800)
+    nodes = [AdvancedNode(f"Node-{n}", "testnet", network_key=key, server_port=sp+n, functions={"test": _testdata}) for n in range(nodes)]
+    [i.serve() for i in nodes]
+    time.sleep(2)
+    timer = Timer()
+
+    passed = []
+    for i in range(rounds):
+        data = os.urandom(random.randint(minsize, maxsize))
+        print(f"Round {i} - {len(data)} bytes")
+        initiator: AdvancedNode = random.choice(nodes)
+
+        timer.reset()
+        result = initiator.send("*", "test", data)
+        print(f"Test {i}: {timer.save()}s - PASS: {all([r == len(data) for r in result.values()])} - Result: {result}")
+        passed.append(all([r == len(data) for r in result.values()]))
+
+    results, avg = timer.resolve()
+    print(f"Results:\n\tAverage time: {avg}s\n\tAll passed: {all(passed)}\n\tLow/High: {min(results)}s / {max(results)}s")
+    [i.shutdown() for i in nodes]
     
 
 
@@ -180,4 +208,5 @@ if __name__ == "__main__":
     #test_nodes(rounds=1024)
     #test_big_nodes()
     #test_objects()
-    test_adv_node_1()
+    #test_adv_node_1()
+    advanced_node_stress_test()

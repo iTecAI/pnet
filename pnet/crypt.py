@@ -35,6 +35,8 @@ def universal_encode(data: typing.Any) -> bytes:
 def universal_decode(data: bytes | str) -> typing.Any:
     if type(data) == str:
         data = data.encode("utf-8")
+    if b"|" in data:
+        data = base64.urlsafe_b64encode(data)
     data = base64.urlsafe_b64decode(data)
     fmt, data = data.split(b"|", maxsplit=1)
     if fmt == b"raw":
