@@ -1,5 +1,5 @@
 import base64
-from pnet import Crypt, Node
+from pnet import Crypt, Node, AdvancedNode
 from cryptography.fernet import Fernet
 import time
 import random
@@ -140,10 +140,44 @@ def test_objects(rounds = 128, n = 20):
     print(f"Results:\n\tAverage time: {avg}s\n\tAll passed: {all(passed)}\n\tLow/High: {min(results)}s / {max(results)}s")
     [i.shutdown() for i in nodes]
 
+def test_adv_node_1():
+    nkey = Fernet.generate_key()
+    n1 = AdvancedNode("node1", "nodes", network_key=nkey, server_port=random.randint(3336, 5000))
+    n2 = AdvancedNode("node2", "nodes", network_key=nkey, server_port=random.randint(3336, 5000))
+
+    @n2.register("testfile")
+    def rfile(node, originator, data):
+        with open(os.path.join("testfiles", "testrecv.webm"), "wb+") as f:
+            while True:
+                new_data = data.read(16384)
+                if not new_data: break
+                f.write(new_data)
+        data.close()
+        return open(os.path.join("testfiles", "testrecv.webm"), "rb")
+
+    n1.serve()
+    n2.serve()
+    time.sleep(2)
+
+    timer = Timer()
+
+    with open(os.path.join("testfiles", "testfile.webm"), "rb") as f:
+        dat = n1._send_chunked("node2", "testfile", f)
+        with open(os.path.join("testfiles", "testrecv2.webm"), "wb") as f2:
+            while True:
+                new_data = dat.read(16384)
+                if not new_data: break
+                f2.write(new_data)
+        dat.close()
+    timer.save()
+    print(timer.resolve())
+    
+
 
 if __name__ == "__main__":
-    test_crypt_parity(rounds=1024)
-    test_crypt_objects(rounds=1024)
-    test_nodes(rounds=1024)
+    #test_crypt_parity(rounds=1024)
+    #test_crypt_objects(rounds=1024)
+    #test_nodes(rounds=1024)
     #test_big_nodes()
-    test_objects()
+    #test_objects()
+    test_adv_node_1()

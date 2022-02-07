@@ -5,5 +5,6 @@ PNET - Local p2p protocol
 MIT License
 """
 
-from .nodes import Node
-from .crypt import Crypt       
+from .base_node import Node
+from .crypt import Crypt
+from .node_types import AdvancedNode    
