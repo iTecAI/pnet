@@ -1,5 +1,5 @@
 import base64
-from pnet import Crypt, Node, AdvancedNode
+from pnet import Crypt, Node, AdvancedNode, CommandNode
 from cryptography.fernet import Fernet
 import time
 import random
@@ -199,7 +199,35 @@ def advanced_node_stress_test(rounds = 32, minsize = 128, maxsize = 1048576, nod
     results, avg = timer.resolve()
     print(f"Results:\n\tAverage time: {avg}s\n\tAll passed: {all(passed)}\n\tLow/High: {min(results)}s / {max(results)}s")
     [i.shutdown() for i in nodes]
+
+def command_output(node: CommandNode, originator: str, arg1, arg2=None):
+    print(f"{node.name} got {arg1} and {arg2} from {originator}.")
+    return arg1
+
+def test_command_nodes(rounds = 128, _nodes = 20):
+    key = Fernet.generate_key()
+    sp = random.randint(4000, 4800)
+    nodes = [CommandNode(f"Node-{n}", "testnet", network_key=key, server_port=sp+n, functions={"test": command_output}) for n in range(_nodes)]
+    [i.serve() for i in nodes]
+    time.sleep(2)
+    timer = Timer()
+
+    passed = []
+    for i in range(rounds):
+        arg1 = random.randint(0, 100)
+        arg2 = random.uniform(0, 100)
+        print(f"Round {i} - {arg1} and {arg2}")
+        random.shuffle(nodes)
+        initiator: CommandNode = nodes[0]
+
+        timer.reset()
+        result = initiator.target(nodes[1].name).test(arg1, arg2=arg2)
+        print(f"Test {i}: {timer.save()}s - PASS: {arg1 == result} - Result: {result}")
+        passed.append(arg1 == result)
     
+    results, avg = timer.resolve()
+    print(f"Results:\n\tAverage time: {avg}s\n\tAll passed: {all(passed)}\n\tLow/High: {min(results)}s / {max(results)}s")
+    [i.shutdown() for i in nodes]
 
 
 if __name__ == "__main__":
@@ -209,4 +237,6 @@ if __name__ == "__main__":
     #test_big_nodes()
     #test_objects()
     #test_adv_node_1()
-    advanced_node_stress_test()
+    #advanced_node_stress_test()
+    #test_command_nodes(rounds=4096)
+    pass

@@ -7,4 +7,4 @@ MIT License
 
 from .base_node import Node
 from .crypt import Crypt
-from .node_types import AdvancedNode    
+from .node_types import AdvancedNode, CommandNode

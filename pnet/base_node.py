@@ -16,7 +16,7 @@ import socket
 import socketserver
 import time
 from threading import Thread
-from logging import warning
+from logging import warning, exception
 import re
 from .crypt import Crypt
         
@@ -170,57 +170,61 @@ class Node:
             self.sserver.shutdown()
     
     def send(self, target: str, message: typing.Any):
-        if not target in self.peers.keys():
-            raise KeyError(f"Peer {target} not found")
-        
-        data = self.crypt.encrypt(message, self.peers[target]["public_key"])
-        if self.net_encrypted:
-            data = base64.urlsafe_b64encode(self.fernet.encrypt(data))
-        
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            # Connect to server and send data
-            sock.connect((self.peers[target]["addr"].split(":")[0], int(self.peers[target]["addr"].split(":")[1])))
-            sock.sendall(f"{self.network_id}|msg|{data.decode('utf-8')}|{self.pk}|END\n".encode("utf-8"))
-
-            # Receive data from the server and shut down
-            received = b""
-            nr = sock.recv(1024).strip()
-            while nr:
-                received += nr
-                nr = sock.recv(1024).strip()
-            received += nr
-        
-        parts = received.decode("utf-8").split("|")
-        if len(parts) != 5:
-            warning(f"Malformed packet {parts} - Too many/few sections")
-            return
-        if parts[4] != "END":
-            warning(f"Malformed packet {parts} - Packet incomplete")
-            return
-        if parts[0] != self.network_id:
-            warning(f"Recieved response from non-network node in network {parts[0]}")
-            return
-
-        _, ptype, content, _, _ = parts
-
-        # Check packet type
-        if ptype != "rsp":
-            raise ValueError(f"Packet is not a response packet: {ptype}")
-        
-        # Attempt to decrypt packet on network level
-        if self.net_encrypted:
-            try:
-                content: bytes = self.fernet.decrypt(base64.urlsafe_b64decode(content.encode("utf-8")))
-            except InvalidToken:
-                raise ValueError("Bad net encryption")
-        else:
-            content: bytes = content.encode("utf-8")
-        
         try:
-            content = self.crypt.decrypt(content)
-        except rsa.pkcs1.DecryptionError:
-            raise ValueError("Bad node encryption")
-        return content
+            if not target in self.peers.keys():
+                raise KeyError(f"Peer {target} not found")
+            
+            data = self.crypt.encrypt(message, self.peers[target]["public_key"])
+            if self.net_encrypted:
+                data = base64.urlsafe_b64encode(self.fernet.encrypt(data))
+            
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                # Connect to server and send data
+                sock.connect((self.peers[target]["addr"].split(":")[0], int(self.peers[target]["addr"].split(":")[1])))
+                sock.sendall(f"{self.network_id}|msg|{data.decode('utf-8')}|{self.pk}|END\n".encode("utf-8"))
+
+                # Receive data from the server and shut down
+                received = b""
+                nr = sock.recv(1024).strip()
+                while nr:
+                    received += nr
+                    nr = sock.recv(1024).strip()
+                received += nr
+            
+            parts = received.decode("utf-8").split("|")
+            if len(parts) != 5:
+                warning(f"Malformed packet {parts} - Too many/few sections")
+                return
+            if parts[4] != "END":
+                warning(f"Malformed packet {parts} - Packet incomplete")
+                return
+            if parts[0] != self.network_id:
+                warning(f"Recieved response from non-network node in network {parts[0]}")
+                return
+
+            _, ptype, content, _, _ = parts
+
+            # Check packet type
+            if ptype != "rsp":
+                raise ValueError(f"Packet is not a response packet: {ptype}")
+            
+            # Attempt to decrypt packet on network level
+            if self.net_encrypted:
+                try:
+                    content: bytes = self.fernet.decrypt(base64.urlsafe_b64decode(content.encode("utf-8")))
+                except InvalidToken:
+                    raise ValueError("Bad net encryption")
+            else:
+                content: bytes = content.encode("utf-8")
+            
+            try:
+                content = self.crypt.decrypt(content)
+            except rsa.pkcs1.DecryptionError:
+                raise ValueError("Bad node encryption")
+            return content
+        except:
+            exception()
+            return "$error"
             
 
 class NodeHandler(socketserver.StreamRequestHandler):
