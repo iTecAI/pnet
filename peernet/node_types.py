@@ -373,6 +373,8 @@ class CommandNode(AdvancedNode):
         functions: dict = {},
     ):
         self.registered_functions = functions
+        self.registered_functions["get_peers"] = self._get_peers
+        self.registered_functions["get_funcs"] = self._get_funcs
         super().__init__(
             name,
             network_id,

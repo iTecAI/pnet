@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="peernet",
-    version="0.1.0",
+    version="0.1.1",
     author="Dax Harris",
     description="Local encrypted p2p communication",
     long_description=long_description,
