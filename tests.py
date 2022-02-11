@@ -1,5 +1,5 @@
 import base64
-from pnet import Crypt, Node, AdvancedNode, CommandNode
+from peernet import Crypt, Node, AdvancedNode, CommandNode
 from cryptography.fernet import Fernet
 import time
 import random
